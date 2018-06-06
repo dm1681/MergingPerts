@@ -26,7 +26,6 @@ todo:
 '''
 
 # imports
-
 from astropy.table import QTable
 import numpy as np
 import matplotlib.pyplot as plt
