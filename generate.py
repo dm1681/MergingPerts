@@ -183,15 +183,16 @@ def get_probecc_data():
 	if found == False:
 		print('Unable to find probecc_comma.dat in current directory.\n'
 			  'Downloading via wget')
-		subprocess.call('wget https://raw.githubusercontent.com/dm1681/Merging_Perts/master/Research/Merging_Perts/probecc_comma.dat',
+		subprocess.call('wget https://raw.githubusercontent.com/dm1681/MergingPerts/master/probecc_comma.dat',
 				shell=True, cwd='./')
 	# check again to make sure it downloaded
+	dirlist = os.listdir('./')
 	for item in dirlist:
 		if item == 'probecc_comma.dat':
 			found = True
 			return found
 	if found == False:
-		print('probecc_comma.dat could not be found or downloaded! Are you connected to the internet?')
+		print('probecc_comma.dat could not be found or downloaded!')
 		sys.exit()
 
 def get_planetrad_data():
@@ -204,16 +205,18 @@ def get_planetrad_data():
 	if found == False:
 		print('Unable to find planets.csv in current directory.\n'
 			  'Downloading via wget')
-		subprocess.call('wget https://raw.githubusercontent.com/dm1681/Merging_Perts/master/Research/Merging_Perts/planets.csv',
+		subprocess.call('wget https://raw.githubusercontent.com/dm1681/MergingPerts/master/planets.csv',
 				shell=True, cwd='./')
 		found = True
 		return found
 
 def write_ICs(runs_dir, n, modules):
 #	global mass_b, rad_b, semi_b, ecc_b, incl_b, longasci_b, argperi_b, Qp_b, mass_star, rad_star, Qstar
-	modules_star = modules[0]
-	modules_b = modules[1]
-	modules_c = modules[2]
+	global modules_b, modules_c, modules_star
+	bEqtide = False
+	bEqOrb = False
+	bEqMesc = False
+	bEqOrbMesc = False
 
 	bWriteEqtide_star = False
 	bWriteEqtide_b = False
@@ -225,9 +228,76 @@ def write_ICs(runs_dir, n, modules):
 	bWriteAtmesc_b = False
 	bWriteAtmesc_c = False
 
+
+
+	if ((modules == 'Eqtide') or (modules == 'eqtide') or (modules == '0')):
+		modules_star = ['eqtide'] * n
+		modules_b = ['eqtide'] * n
+		modules_c = ['null'] * n
+		bEqtide = True
+		bWriteEqtide_b = True
+		bWriteEqtide_star = True
+
+	elif ((modules == 'EqOrb') or (modules == 'eqorb') or (modules == '1')):
+		modules_star = ['eqtide'] * n
+		modules_b = ['eqtide distorb'] * n
+		modules_c = ['eqtide distorb'] * n
+		bEqOrb = True
+		bWriteEqtide_b = True
+		bWriteDistorb_b = True
+		bWriteEqtide_star = True
+		bWriteEqtide_c = True
+		bWriteDistorb_c = True
+
+	elif ((modules == 'eqmesc') or (modules == 'EqMesc') or (modules == '2')):
+		modules_star = ['eqtide stellar'] * n
+		modules_b = ['eqtide atmesc'] * n
+		modules_c = ['null'] * n
+		bEqMesc = True
+		bWriteEqtide_star = True
+		bWriteEqtide_b = True
+		bWriteAtmesc_b = True
+		bWriteAtmesc_star = True
+
+	elif ((modules == 'eqorbmesc') or (modules == 'EqOrbMesc') or (modules == '3')):
+		modules_star = ['eqtide stellar'] * n
+		modules_b = ['eqtide distorb'] * n
+		modules_c = ['eqtide distorb'] * n
+		bEqOrbMesc = True
+		bWriteEqtide_star = True
+		bWriteEqtide_b = True
+		bWriteEqtide_c = True
+		bWriteDistorb_b = True
+		bWriteDistorb_c = True
+		bWriteDistorb_star = True
+		bWriteAtmesc_b = True
+		bWriteAtmesc_c = True
+		bWriteAtmesc_star = True
+
+
+
+	# now to determine which cases will have atmesc
+	i = 0
+	while i <= n-1:
+		# eqmesc --> since not all need to be run, need to differentiate those w/o an atmosphere so they are not written
+		# same with eqorbmesc
+		# therefore, if the moduels_star[i] == 'null', the case should not be written
+		if bEqMesc:
+			if Qp_b[i] <= 10**5: # not gaseous
+				modules_star[i] = 'null'
+		elif bEqOrbMesc:
+			if ((Qp_b[i] <= 10**5) and (Qp_c[i] <= 10**5)): # neither b nor c are gaseous
+				modules_star[i] = 'null'
+			if (Qp_b[i] >= 10**6): # b is gaseous
+			 	modules_b[i] += ' atmesc'
+			if (Qp_c[i] >= 10**6): # c is gaseous
+				modules_c[i] += ' atmesc'
+		i += 1
+
+	# define some vars, may be changed later
+
 	# b.in
 	name_b = 'b'
-	modules_b = modules_b
 	dMass_b = mass_b * -1# sets to earth masses;
 	dEnvMass_b = env_mass_b * -1
 	dRadius_b = rad_b * -1 # sets to earth radii
@@ -239,7 +309,6 @@ def write_ICs(runs_dir, n, modules):
 
 	#c.in
 	name_c = 'c'
-	modules_c = modules_c
 	dMass_c = mass_c * -1 # sets to earth masses;
 	dEnvMass_c = env_mass_c * -1
 	dRadius_c = rad_c * -1 # sets to earth radii
@@ -251,7 +320,6 @@ def write_ICs(runs_dir, n, modules):
 
 	#star.in
 	name_star = 'star'
-	modules_star = modules_star
 	dMass_star = mass_star #solar masses;
 	dRadius_star = rad_star # * ratio of solar radii to au
 	dObliquity_star = 0
@@ -278,36 +346,16 @@ def write_ICs(runs_dir, n, modules):
 	dStopTime = 10**10
 	dOutputTime = 10**9
 
-	# now lets determine which modules to write
-	#b.in
-	if modules_b.find('distorb') > -1:
-		bWriteDistorb_b = True
-	if modules_b.find('atmesc') > -1:
-		bWriteAtmesc_b = True
-	if modules_b.find('eqtide') > -1:
-		bWriteEqtide_b = True
-
-	#c.in
-	if modules_c.find('distorb') > -1:
-		bWriteDistorb_c = True
-	if modules_c.find('atmesc') > -1:
-		bWriteAtmesc_c = True
-	if modules_c.find('eqtide') > -1:
-		bWriteEqtide_c = True
-
-	# star.in
-	if modules_star.find('distorb') > -1:
-		bWriteDistorb_star = True
-	if modules_star.find('atmesc') > -1:
-		bWriteAtmesc_star = True
-	if modules_star.find('eqtide') > -1:
-		bWriteEqtide_star = True
 
 	i = 0
 	while i <= n-1:
 		# make strings of values; b.in
+		if modules_star[i] == 'null':
+			i += 1
+			continue
 		name_idx = '%05i'%i
-		print ('Writing...\n')
+		percentage = (i/(n-1))*100
+		print ('Writing Sim#: ',name_idx,' %0.3f'%percentage,'%',end='\r')
 		if os.path.isdir(runs_dir+name_idx) == True: #sim folders exist
 			shutil.rmtree(runs_dir) #removes previous folders; THIS LINE DELETES THE ENTIRE RUNS DIRECTORY
 			os.makedirs(runs_dir+name_idx)
@@ -324,7 +372,7 @@ def write_ICs(runs_dir, n, modules):
 
 		b = open(runs_dir+name_idx+'/b.in','w')
 		b_content = ('sName\t\t\t'+ name_b +
-					 '\nsaModules\t\t'+modules_b+
+					 '\nsaModules\t\t'+modules_b[i]+
 
 					 '\n\n#Physical Properties'+
 					 '\ndMass\t\t\t'+mass_str+
@@ -341,7 +389,7 @@ def write_ICs(runs_dir, n, modules):
 			b_content, b_output = write_eqtide(b_content, b_output,'b', i)
 		if bWriteDistorb_b:
 			b_content, b_output = write_distorb(b_content, b_output,'b', i)
-		if bWriteAtmesc_b:
+		if (bWriteAtmesc_b and (dEnvMass_b[i] != 9999)): # there is an envelope
 			b_content, b_output = write_atmesc(b_content, b_output,'b', i)
 
 		b_content += (b_output+'\n')
@@ -349,7 +397,7 @@ def write_ICs(runs_dir, n, modules):
 		b.close()
 
 		#c.in
-		if modules_c != 'null':
+		if modules_c[i] != 'null':
 			saBodyFiles = 'star.in b.in c.in'
 			mass_str = str(dMass_c[i])
 			radius_str = str(dRadius_c[i])
@@ -360,7 +408,7 @@ def write_ICs(runs_dir, n, modules):
 
 			c = open(runs_dir+name_idx+'/c.in','w')
 			c_content = ('sName\t\t\t'+ name_c +
-						 '\nsaModules\t\t'+modules_c+
+						 '\nsaModules\t\t'+modules_c[i]+
 
 						 '\n\n#Physical Properties'+
 						 '\ndMass\t\t\t'+mass_str+
@@ -377,7 +425,7 @@ def write_ICs(runs_dir, n, modules):
 				c_content, c_output = write_eqtide(c_content, c_output,'c',i)
 			if bWriteDistorb_c:
 				c_content, c_output = write_distorb(c_content, c_output,'c',i)
-			if bWriteAtmesc_c:
+			if ((bWriteAtmesc_c) and (dEnvMass_c[i] != 9999)):
 				c_content, c_output = write_atmesc(c_content, c_output,'c',i)
 
 			c_content += (c_output+'\n')
@@ -400,7 +448,7 @@ def write_ICs(runs_dir, n, modules):
 
 		star = open(runs_dir+name_idx+'/star.in','w')
 		star_content = ('sName\t\t\t'+name_star+
-						'\nsaModules\t\t'+modules_star+
+						'\nsaModules\t\t'+modules_star[i]+
 						'\n\ndMass\t\t\t'+strMass_str+
 						'\ndRadius\t\t\t'+strRad_str+
 						'\ndObliquity\t\t'+strObl_str+
@@ -471,7 +519,7 @@ def write_ICs(runs_dir, n, modules):
 	return 0
 
 def write_distorb(body_content, body_outputorder, body, idx):
-	global IC, modules
+	global IC, modules_b, modules_c, modules_star
 	sOrbitModel = 'rd4'
 	bOutputLapl_str = '0'
 	InvPlane_str = '1'
@@ -498,14 +546,14 @@ def write_distorb(body_content, body_outputorder, body, idx):
 	return body_content, body_outputorder
 
 def write_eqtide(body_content, body_outputorder, body, idx):
-	global IC, modules
+	global IC, modules_b, modules_c, modules_star
 	bForceEqSpin_str = '1'
 	dK2_str = '0.3'
 	sTideModel = 'p2'
 	planet_outputorder = ' Semim Ecce Obliquity SurfEnFluxEqtide'
 	star_outputorder = ''
 	if body == 'star':
-		if modules[2].find('eqtide') != -1:
+		if modules_c[idx].find('eqtide') != -1:
 			perts_str = 'b c'
 		else:
 			perts_str = 'b'
@@ -541,15 +589,29 @@ def write_eqtide(body_content, body_outputorder, body, idx):
 	return body_content, body_outputorder
 
 def write_atmesc(body_content, body_outputorder, body, idx):
-	global IC, modules
+	global IC, modules_b, modules_c, modules_star
 	sPlanetRadiusModel = 'lehmer'
 	bHaltEnvelopeGone_str = '1'
 	planet_outputorder = ' -Mass -EnvelopeMass -DEnvMassDt -Radius -RadSolid -RadXUV -PresSurf -FXUV'
 	star_outputorder = ''
 	if body == 'star':
+		body_content += ('\ndSatXUVTime\t' + str(IC['SatXUVTime'][idx]) + '\n')
 		outputorder = star_outputorder
 
 	elif body == 'b':
+		body_content += ('\n\n#ATMESC Properties'
+						 + '\nsPlanetRadiusModel\t' + sPlanetRadiusModel
+						 + '\nbHaltEnvelopeGone\t' + bHaltEnvelopeGone_str
+						 + '\ndEnvelopeMass\t\t' + str(IC['EnvMass_'+body][idx] * -1)
+						 + '\ndAtmXAbsEffH\t\t' + str(IC['AtmXAbsEffH_'+body][idx])
+						 + '\ndThermTemp\t\t' + str(IC['ThermTemp_'+body][idx])
+						 + '\ndPresXUV\t\t' + str(IC['PresXUV_'+body][idx])
+						 + '\ndAtmGasConst\t\t' + str(IC['AtmGasConst_'+body][idx])
+#					 	 + '\ndFXUV\t\t\t' + str(IC['FXUV_'+body][idx])
+						 )
+		outputorder = planet_outputorder
+
+	elif body == 'c':
 		body_content += ('\n\n#ATMESC Properties'
 						 + '\nsPlanetRadiusModel\t' + sPlanetRadiusModel
 						 + '\nbHaltEnvelopeGone\t' + bHaltEnvelopeGone_str
@@ -597,17 +659,6 @@ if bLoad == False:
 	else:
 		print ('ProbEcc data not found! E-mail dm1681@gmail.com for help!')
 
-	# def linear interp for Q and atmmassfrac;
-	min_q = 10**6
-	max_q = 10**7
-	min_atmmassfrac = 0.01
-	max_atmmassfrac = 0.1
-	slope = (max_atmmassfrac - min_atmmassfrac)/(max_q - min_q)
-	# y = atmmassfrac, x = q
-	def linear_interp(x):
-		y = min_atmmassfrac + slope * (x - min_q)
-		return y
-
 	# generates a discribution of "n" eccentricities fit observed
 	def ecc_gen(n,name):
 		print('Generating Ecc Distribution for:',name)
@@ -640,8 +691,6 @@ if bLoad == False:
 			mass = ((r/const.R_earth)**(3.68))*const.M_earth
 			mass = mass.to(u.earthMass)
 			Qplanet = np.random.uniform(30,301)
-			if toggle == 'atm':
-				return 0.0
 		else:
 			r = r.to(u.cm)
 			volume = (4.0 * np.pi * r**3.0) / 3.0
@@ -649,9 +698,6 @@ if bLoad == False:
 			mass = volume * density
 			mass = mass.to(u.earthMass)
 			Qplanet = np.random.uniform(10**6, (10**7)+1)
-			atmmassfrac = linear_interp(Qplanet)
-			if toggle == 'atm':
-				return atmmassfrac
 		if toggle == 'm':
 			return mass
 		elif toggle == 'Q':
@@ -722,7 +768,6 @@ if bLoad == False:
 	rad_c = rad_c * u.earthRad
 
 	mass_b = np.array([])
-	atmmassfrac_b = np.array([])
 	Qp_b = np.array([])
 	semi_b = np.random.uniform(0.01,0.15,n)
 
@@ -734,11 +779,8 @@ if bLoad == False:
 		mass_b = np.append(mass_b,m)
 		q = calc_mass_Qp(r,'Q')
 		Qp_b = np.append(Qp_b, q)
-		AtmMassFrac_b = calc_mass_Qp(r,'atm')
-		atmmassfrac_b = np.append(atmmassfrac_b, AtmMassFrac_b)
 
 	mass_c = np.array([])
-	atmmassfrac_c = np.array([])
 	Qp_c= np.array([])
 
 	print ('Generating Mass Distribution for: %s'%name_outer)
@@ -748,8 +790,6 @@ if bLoad == False:
 		mass_c = np.append(mass_c, m)
 		q = calc_mass_Qp(r,'Q')
 		Qp_c = np.append(Qp_c, q)
-		AtmMassFrac_c = calc_mass_Qp(r,'atm')
-		atmmassfrac_c = np.append(atmmassfrac_c, AtmMassFrac_c)
 
 	# star.in parameters
 	mass_star = np.random.uniform(0.7,1.4,n)
@@ -888,23 +928,60 @@ if bLoad == False:
 
 	##### ATMESC #####
 	# Replicating Lehmer 2017 ranges: #
+	presxuv_b = np.zeros(n)
+	presxuv_c = np.zeros(n)
+	atmgasconst_b = np.zeros(n)
+	atmgasconst_c = np.zeros(n)
+	thermtemp_b = np.zeros(n)
+	thermtemp_c = np.zeros(n)
+	atmmassfrac_b = np.zeros(n)
+	atmmassfrac_c = np.zeros(n)
+	atmxabseffH_b = np.zeros(n)
+	atmxabseffH_c = np.zeros(n)
+	satxuvtime = np.zeros(n)
+	env_mass_b = np.zeros(n)
+	env_mass_c = np.zeros(n)
 
-	presxuv_b = np.random.uniform(0.1, 10, n)
-	presxuv_c = np.random.uniform(0.1, 10, n)
-	atmgasconst_b = np.random.uniform(3600, 4157, n)
-	atmgasconst_c = np.random.uniform(3600, 4157, n)
-	thermtemp_b = np.random.uniform(880, 3000, n)
-	thermtemp_c = np.random.uniform(880, 3000, n)
-	fxuv_b = np.random.uniform(43, 172, n)
-	fxuv_c = np.random.uniform(43, 172, n)
-	#atmmassfrac_b = np.random.uniform(0.01, 0.1, n)
-	#atmmassfrac_c = np.random.uniform(0.01, 0.1, n)
-	atmxabseffH_b = np.random.uniform(0.1, 0.6, n)
-	atmxabseffH_c = np.random.uniform(0.1, 0.6, n)
-	planetradiusmodel = 'lehmer'
-	satxuvtime = np.random.uniform(80e6, 120e6, n)
-	env_mass_b = mass_b * atmmassfrac_b
-	env_mass_c = mass_c * atmmassfrac_c
+	i=0
+	while i <= n-1:
+		# star first
+		if ((Qp_b[i] >= 10**6) or (Qp_c[i] >= 10**6)):
+			satxuvtime[i] = np.random.uniform(80e6, 120e6, 1)
+		else:
+			satxuvtime[i] = -9999
+
+		# b
+		if Qp_b[i] >= 10**6: # gaseous
+			presxuv_b[i] = np.random.uniform(0.1, 10, 1)
+			atmgasconst_b[i] = np.random.uniform(3600, 4157, 1)
+			thermtemp_b[i] = np.random.uniform(880, 3000, 1)
+			atmmassfrac_b[i] = np.random.uniform(0.01, 0.1, 1)
+			atmxabseffH_b[i] = np.random.uniform(0.1, 0.6, 1)
+			env_mass_b[i] = mass_b[i] * atmmassfrac_b[i]
+		elif Qp_b[i] <= 10**5:
+			presxuv_b[i] = -9999
+			atmgasconst_b[i] = -9999
+			thermtemp_b[i] = -9999
+			atmmassfrac_b[i] = -9999
+			atmxabseffH_b[i] = -9999
+			env_mass_b[i] = -9999
+
+		# c
+		if Qp_c[i] >= 10**6: # gaseous
+			presxuv_c[i] = np.random.uniform(0.1, 10, 1)
+			atmgasconst_c[i] = np.random.uniform(3600, 4157, 1)
+			thermtemp_c[i] = np.random.uniform(880, 3000, 1)
+			atmmassfrac_c[i] = np.random.uniform(0.01, 0.1, 1)
+			atmxabseffH_c[i] = np.random.uniform(0.1, 0.6, 1)
+			env_mass_c[i] = mass_c[i] * atmmassfrac_c[i]
+		elif Qp_c[i] <= 10**5:
+			presxuv_c[i] = -9999
+			atmgasconst_c[i] = -9999
+			thermtemp_c[i] = -9999
+			atmmassfrac_c[i] = -9999
+			atmxabseffH_c[i] = -9999
+			env_mass_c[i] = -9999
+		i += 1
 
 
 	# now lets save everything to an IC table using astropy
@@ -934,8 +1011,6 @@ if bLoad == False:
 	IC['AtmGasConst_c'] = atmgasconst_c
 	IC['ThermTemp_b'] = thermtemp_b
 	IC['ThermTemp_c'] = thermtemp_c
-	IC['FXUV_b'] = fxuv_b
-	IC['FXUV_c'] = fxuv_c
 	IC['AtmMassFrac_b'] = atmmassfrac_b
 	IC['AtmMassFrac_c'] = atmmassfrac_c
 	IC['AtmXAbsEffH_b'] = atmxabseffH_b
@@ -950,6 +1025,8 @@ if bLoad == False:
 	IC.write(path, format='ascii.csv')
 	print('ICs saved @ %s'%path)
 
+
+# found premade initial conditions
 if bLoad == True:
 	n = len(IC)
 	print ('Assuming Semi_c is already Hill Stable')
@@ -968,7 +1045,6 @@ print("Initial Conditions Generated.")
 bWrite = input('Write input files? [y/n] ')
 
 if bWrite == 'y':
-
 	sim_idx = IC['Sim #']
 	mass_b = IC['Mass_b']
 	mass_c = IC['Mass_c']
@@ -995,8 +1071,6 @@ if bWrite == 'y':
 	atmgasconst_c = IC['AtmGasConst_c']
 	thermtemp_b = IC['ThermTemp_b']
 	thermtemp_c = IC['ThermTemp_c']
-	fxuv_b = IC['FXUV_b']
-	fxuv_c = IC['FXUV_c']
 	atmmassfrac_b = IC['AtmMassFrac_b']
 	atmmassfrac_c = IC['AtmMassFrac_c']
 	atmxabseffH_b = IC['AtmXAbsEffH_b']
@@ -1005,23 +1079,23 @@ if bWrite == 'y':
 	env_mass_b = IC['EnvMass_b']
 	env_mass_c = IC['EnvMass_c']
 
-	modules = {} # modules[0] = star; modules[1] = b, modules[2] = c, etc...
-	which_modules = input('Write Options (eqtide(0) atmesc(1) eqorb(2)): ')
-	if ((which_modules == '0') or (which_modules=='eqtide')):
-		modules[0] = 'eqtide'
-		modules[1] = 'eqtide'
-		modules[2] = 'null'
+	modules = input('Write Options: (Eqtide[0] EqOrb[1] EqMesc[2] EqOrbMesc[3]): ')
+	#eqtide
+	if ((modules == '0') or (modules=='Eqtide')):
 		write_ICs('./runs_eqtide/',n,modules)
-	elif ((which_modules == '1') or (which_modules == 'atmesc')):
-		modules[0] = 'stellar'
-		modules[1] = 'atmesc'
-		modules[2] = 'null'
-		write_ICs('./runs_atmesc/',n,modules)
-	elif ((which_modules == '2') or (which_modules == 'eqorb')):
-		modules[0] = 'eqtide'
-		modules[1] = 'eqtide distorb'
-		modules[2] = 'eqtide distorb'
+
+	#eqorb
+	elif ((modules == '1') or (modules == 'EqOrb')):
 		write_ICs('./runs_eqorb/',n,modules)
+
+	#eqmesc
+	elif ((modules == '2') or (modules == 'EqMesc')):
+		write_ICs('./runs_eqmesc/',n,modules)
+
+	#eqorbmesc
+	elif ((modules == '3') or (modules == 'EqOrbMesc')):
+		write_ICs('./runs_eqorbmesc/',n,modules)
+
 	else:
 		print ('Error: Option not recognized.')
 
